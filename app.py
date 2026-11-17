@@ -96,7 +96,9 @@ with st.sidebar:
         "Faculty of Medicine, Hong Bang International University, "
         "215 Dien Bien Phu Street, Gia Dinh Ward, Ho Chi Minh City, Viet Nam"
     )
-
+    st.caption(
+        "ORCID: "
+        "0009-0006-1985-178X"
     )
     st.markdown(
         "**Correspondence:**\n\n"
