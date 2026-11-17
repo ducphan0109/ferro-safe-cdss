@@ -16,3 +16,8 @@ This clinical software directly operationalizes the translational frameworks est
 ```bash
 pip install -r requirements.txt
 streamlit run app.py
+
+👨🔬 Author & Affiliation
+Duc Minh Phan
+Faculty of Medicine, Hong Bang International University, Ho Chi Minh City, Viet Nam
+Email: ducpm@hiu.vn
