@@ -14,7 +14,9 @@ This clinical software directly operationalizes the translational frameworks est
 
 ## 👨🔬 Author & Affiliation
 Duc Minh Phan
+
 Faculty of Medicine, Hong Bang International University, Ho Chi Minh City, Viet Nam
+
 Email: ducpm@hiu.vn
 
 ## 🚀 Local Installation & Execution
