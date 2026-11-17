@@ -12,12 +12,14 @@ This clinical software directly operationalizes the translational frameworks est
 * **Module 2 (Step 2 & 3 — `FERRO-6H-RISK` Triage & Formulation Pathway):** Enforces a hard-stop contraindication gate for baseline hypophosphatemia ($\text{PO}_4 < 2.5\text{ mg/dL}$), calculates the 0–15 point composite `FERRO-6H-RISK` index based on osteocyte DMP1-integrin blockade intensity and the renal eGFR filtration paradox, and routes patients to **Pathway A** (FDI, Ferumoxytol, LMW ID) or **Pathway B** (mandatory Weeks 2–3 surveillance).
 * **Module 3 (Post-Infusion Diagnostic De-confounder):** Differentiates iatrogenic 6-H hypophosphatemic myopathy/osteomalacia from true RLS relapse/dopaminergic augmentation and physiological delayed CNS iron repletion ($< 12\text{ weeks}$).
 
+## 👨🔬 Author & Affiliation
+Duc Minh Phan
+Faculty of Medicine, Hong Bang International University, Ho Chi Minh City, Viet Nam
+Email: ducpm@hiu.vn
+
 ## 🚀 Local Installation & Execution
 ```bash
 pip install -r requirements.txt
 streamlit run app.py
 
-👨🔬 Author & Affiliation
-Duc Minh Phan
-Faculty of Medicine, Hong Bang International University, Ho Chi Minh City, Viet Nam
-Email: ducpm@hiu.vn
+
