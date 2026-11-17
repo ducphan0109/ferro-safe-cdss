@@ -96,9 +96,7 @@ with st.sidebar:
         "Faculty of Medicine, Hong Bang International University, "
         "215 Dien Bien Phu Street, Gia Dinh Ward, Ho Chi Minh City, Viet Nam"
     )
-    st.caption(
-        "Faculty of Public Health, University of Medicine and Pharmacy at Ho Chi Minh City, "
-        "Ho Chi Minh City, Viet Nam"
+
     )
     st.markdown(
         "**Correspondence:**\n\n"
