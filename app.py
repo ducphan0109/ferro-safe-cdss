@@ -148,6 +148,69 @@ tab1, tab2, tab3, tab4 = st.tabs([
 # MODULE 1: STEP 1 - BIOMARKER INDICATION & HIDDEN RESPONDER ENGINE
 # ==============================================================================
 with tab1:
+    # Responsive Clinical KPI Card CSS (Prevents st.metric text truncation "...")
+    st.markdown(
+        """
+        <style>
+        .kpi-grid-2 {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 12px;
+            margin-bottom: 12px;
+        }
+        .kpi-grid-4 {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+            margin-bottom: 12px;
+        }
+        .kpi-card {
+            background-color: #ffffff;
+            border: 1px solid #cbd5e1;
+            border-left: 4px solid #0f172a;
+            border-radius: 6px;
+            padding: 10px 14px;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+        }
+        .kpi-card.alert-red {
+            border-left-color: #b91c1c;
+            background-color: #fef2f2;
+        }
+        .kpi-card.alert-amber {
+            border-left-color: #b45309;
+            background-color: #fffbeb;
+        }
+        .kpi-card.alert-blue {
+            border-left-color: #0369a1;
+            background-color: #f0f9ff;
+        }
+        .kpi-label {
+            font-size: 0.78rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+            color: #475569;
+            margin-bottom: 4px;
+            line-height: 1.25;
+        }
+        .kpi-value {
+            font-size: 1.45rem;
+            font-weight: 800;
+            color: #0f172a;
+            line-height: 1.2;
+            margin-bottom: 4px;
+        }
+        .kpi-sub {
+            font-size: 0.78rem;
+            color: #334155;
+            font-weight: 500;
+            line-height: 1.3;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True
+    )
+
     st.markdown("#### **Step 1: Initiation, Biomarker Gatekeeper, and Therapeutic Response Prediction**")
     st.caption(
         "Evaluates clinical eligibility for intravenous (IV) iron replacement according to AASM 2025 / IRLSSG "
@@ -162,23 +225,23 @@ with tab1:
 
         irls_score = st.slider(
             "Baseline IRLSSG Severity Rating Scale Score (0–40 points):",
-            min_value=0, max_value=40, value=24, step=1,
+            min_value=0, max_value=40, value=26, step=1,
             help="IRLSSG severity strata: Mild (1–10), Moderate (11–20), Severe (21–30), Very Severe (31–40). "
-                 "Clinical trials and guidelines primarily endorse IV iron for moderate-to-severe RLS (IRLS ≥ 15)."
+                 "Clinical trials and guidelines endorse IV iron for moderate-to-severe RLS (IRLS ≥ 15, or ≥ 11 with oral intolerance)."
         )
 
         ferritin = st.number_input(
             "Baseline Serum Ferritin (µg/L):",
-            min_value=1.0, max_value=1000.0, value=120.0, step=5.0,
-            help="Oral iron absorption is physiologically restricted by hepcidin when serum ferritin exceeds 75 µg/L "
+            min_value=1.0, max_value=1000.0, value=145.0, step=5.0,
+            help="Oral iron absorption is physiologically restricted by hepatic hepcidin when serum ferritin exceeds 75 µg/L "
                  "(Allen et al., 2018; Winkelman et al., 2025)."
         )
 
         tsat = st.number_input(
             "Baseline Transferrin Saturation — TSAT (%):",
-            min_value=1.0, max_value=100.0, value=28.0, step=1.0,
-            help="Multivariable logistic regression demonstrates %TSAT is an independent predictor of IV iron "
-                 "response (OR = 0.955, 95% CI: 0.913–0.998, p = 0.040; Park et al., 2020; Phan et al., 2026)."
+            min_value=1.0, max_value=100.0, value=24.0, step=1.0,
+            help="Multivariable logistic regression demonstrates %TSAT is a continuous independent predictor of IV iron "
+                 "response (OR = 0.955 per 1% increase, 95% CI: 0.913–0.998, p = 0.040; Park et al., 2020; Phan et al., 2026)."
         )
 
         rls_phenotype = st.selectbox(
@@ -217,9 +280,9 @@ with tab1:
             severity_str = "Very Severe RLS (31–40 pts)"
 
         is_pediatric = "Pediatric" in rls_phenotype
-        eligible_severity_or_intolerance = (irls_score >= 15) or oral_intolerance
+        # AASM 2025 / IRLSSG 2018: IV iron requires Moderate-to-Severe RLS (IRLS >= 15, or >= 11 with oral intolerance)
+        eligible_for_iv_severity = (irls_score >= 15) or (irls_score >= 11 and oral_intolerance)
 
-        # Compute Phenotype Responder Rate
         phenotype_map = {
             "Primary / Idiopathic RLS (Baseline responder benchmark: 64.7%–80.8%)": (
                 72.8, "64.7% (single 1000 mg infusion; Park et al., 2020) to 80.8% (repeated dosing; Park et al., 2022)"
@@ -242,65 +305,90 @@ with tab1:
         }
         base_prob, prob_desc = phenotype_map[rls_phenotype]
 
-        adjusted_prob = base_prob
-        if tsat <= 35 and ferritin < 300:
-            adjusted_prob = min(96.0, adjusted_prob + 6.5)
-        if active_augmentation:
-            adjusted_prob = max(25.0, adjusted_prob - 18.0)
+        # Continuous Biomarker-Modulated Responder Model (Park et al., 2020: %TSAT OR = 0.955 per 1% increase, p = 0.040)
+        tsat_effect = (35.0 - tsat) * 0.59
+        if ferritin < 300:
+            ferritin_effect = (145.0 - ferritin) * 0.03
+        else:
+            ferritin_effect = -18.0 - (ferritin - 300.0) * 0.02
 
-        m1_c1, m1_c2 = st.columns(2)
-        m1_c1.metric("IRLSSG Clinical Stratum", f"{irls_score}/40 pts", severity_str)
-        m1_c2.metric("Predicted IV Iron Responder Rate", f"{adjusted_prob:.1f}%", "≥ 40% IRLS Score Reduction")
+        irls_effect = (irls_score - 26.0) * 0.22
+        if irls_score <= 10:
+            irls_effect -= 10.0
+
+        adjusted_prob = base_prob + tsat_effect + ferritin_effect + irls_effect
+        if active_augmentation:
+            adjusted_prob -= 18.0
+        if irls_score == 0:
+            adjusted_prob = 0.0
+        else:
+            adjusted_prob = max(5.0, min(96.5, adjusted_prob))
+
+        st.markdown(
+            f"""
+            <div class="kpi-grid-2">
+                <div class="kpi-card">
+                    <div class="kpi-label">IRLSSG Clinical Stratum</div>
+                    <div class="kpi-value">{irls_score} / 40 pts</div>
+                    <div class="kpi-sub">{severity_str}</div>
+                </div>
+                <div class="kpi-card alert-blue">
+                    <div class="kpi-label">Predicted IV Iron Responder Rate</div>
+                    <div class="kpi-value">{adjusted_prob:.1f}%</div>
+                    <div class="kpi-sub">Probability of ≥ 40% IRLS Reduction (TSAT- & Ferritin-Adjusted)</div>
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
         st.caption(f"**Subpopulation Evidence Benchmark:** {prob_desc}.")
 
         # Decision Logic for Oral vs IV Iron
-        if (75 <= ferritin < 300) and (tsat <= 35) and eligible_severity_or_intolerance and (irls_score > 0):
+        if (75 <= ferritin < 300) and (tsat <= 35) and eligible_for_iv_severity:
             st.success(
                 "**CLINICAL DIRECTIVE: INTRAVENOUS IRON INDICATED — 'HIDDEN RESPONDER' IN FERRITIN GRAY ZONE**\n\n"
-                "- **Biomarker Evaluation:** Serum ferritin resides in the borderline 'gray zone' (**75–300 µg/L**), "
-                "where reliance on ferritin alone frequently results in clinical undertreatment.\n"
-                "- **Secondary Biomarker Trigger:** **TSAT ≤ 35%** confirms functional iron deficiency and "
-                "independently predicts a favorable therapeutic response to IV iron (**OR = 0.955, 95% CI: 0.913–0.998, "
-                "p = 0.040**; Park et al., 2020; Phan et al., 2026; Phan, 2027)."
+                f"- **Biomarker Evaluation:** Serum ferritin resides in the borderline 'gray zone' (**{ferritin:.0f} µg/L**; "
+                "range 75–300 µg/L), where reliance on ferritin alone frequently results in clinical undertreatment.\n"
+                f"- **Secondary Biomarker Trigger:** **TSAT = {tsat:.0f}% (≤ 35%)** confirms functional iron deficiency and "
+                "independently predicts a favorable therapeutic response to IV iron (**OR = 0.955 per 1% TSAT, 95% CI: "
+                "0.913–0.998, p = 0.040**; Park et al., 2020; Phan et al., 2026; Phan, 2027)."
             )
             indication_status = "IV Iron Indicated (Hidden Responder)"
-        elif (ferritin < 100 or (ferritin < 300 and tsat <= 45)) and eligible_severity_or_intolerance and (irls_score > 0):
+        elif (ferritin < 100 or (ferritin < 300 and tsat <= 45)) and eligible_for_iv_severity:
             st.success(
                 "**CLINICAL DIRECTIVE: STANDARD GUIDELINE INDICATION FOR INTRAVENOUS IRON**\n\n"
-                "- **Biomarker Evaluation:** Meets AASM 2025 and IRLSSG consensus thresholds (**Ferritin < 100 µg/L**, "
-                "or **Ferritin 100–300 µg/L with TSAT ≤ 45%**) in a patient with moderate-to-severe symptoms "
-                "(**IRLS ≥ 15**) or documented intolerance/refractoriness to oral iron (Winkelman et al., 2025; "
-                "Allen et al., 2018).\n"
+                f"- **Biomarker Evaluation:** Meets AASM 2025 and IRLSSG consensus thresholds (**Ferritin = {ferritin:.0f} µg/L < 300 µg/L** "
+                f"and **TSAT = {tsat:.0f}% ≤ 45%**) in a patient with moderate-to-severe symptoms "
+                f"(**IRLS = {irls_score} pts**) or documented oral iron intolerance (Winkelman et al., 2025; Allen et al., 2018).\n"
                 "- **Predictive Nuance:** If baseline TSAT lies between **36% and 45%**, IV iron remains guideline-supported, "
                 "though expected therapeutic magnitude is more pronounced when **TSAT ≤ 35%** (Phan et al., 2026)."
             )
             indication_status = "IV Iron Indicated (Standard Criteria)"
-        elif (ferritin <= 75 or (is_pediatric and ferritin < 50)) and (not oral_intolerance) and (0 < irls_score < 15):
+        elif (ferritin <= 75 or (is_pediatric and ferritin < 50)) and (0 < irls_score < 15) and (not oral_intolerance or irls_score <= 10):
             st.info(
                 "**CLINICAL DIRECTIVE: FIRST-LINE ORAL IRON SUPPLEMENTATION TRIAL**\n\n"
-                "- **Physiological Rationale:** Baseline serum ferritin is **≤ 75 µg/L** (low systemic hepcidin activity, "
-                "permitting enterocyte ferroportin transport) with mild-to-low-moderate symptom severity (**IRLS < 15**) "
-                "and intact gastrointestinal tolerance.\n"
+                f"- **Physiological Rationale:** Baseline serum ferritin is **{ferritin:.0f} µg/L (≤ 75 µg/L)** with mild "
+                f"symptom severity (**IRLS = {irls_score} pts**). Low systemic hepcidin permits enterocyte ferroportin transport.\n"
                 "- **Standard Regimen:** Ferrous sulfate **65 mg elemental iron** (325–650 mg/day co-administered with "
                 "Vitamin C in adults; **3 mg/kg/day** in pediatric patients) for 12 weeks, followed by repeat iron panel "
                 "assessment (Allen et al., 2018; González-Parejo et al., 2024; Dye et al., 2017)."
             )
             indication_status = "Oral Iron First-Line"
-        elif (75 < ferritin < 300) and (tsat <= 45) and (not oral_intolerance) and (0 < irls_score < 15):
+        elif (0 < irls_score <= 10) and (ferritin > 75 and ferritin < 300):
             st.warning(
-                "**CLINICAL DIRECTIVE: ORAL IRON INEFFICIENT (HEPCIDIN BLOCKADE) — SYMPTOM SEVERITY BELOW IV THRESHOLD**\n\n"
-                "- **Pathophysiological Rationale:** Because serum ferritin exceeds **75 µg/L**, hepatic hepcidin "
-                "upregulation limits intestinal oral iron absorption (Allen et al., 2018). However, mild symptom severity "
-                "(**IRLS < 15**) without refractory features does not yet mandate intravenous infusion.\n"
-                "- **Clinical Action:** Optimize non-iron therapies or monitor clinically; initiate IV iron if IRLS "
-                "progresses to **≥ 15** or if functional iron deficiency (**TSAT ≤ 35%**) is accompanied by refractory symptoms."
+                "**CLINICAL DIRECTIVE: MILD RLS SEVERITY (IRLS ≤ 10) — INTRAVENOUS IRON NOT INDICATED**\n\n"
+                f"- **Guideline Threshold (Allen et al., 2018; Winkelman et al., 2025):** Although serum ferritin (**{ferritin:.0f} µg/L**) "
+                f"and TSAT (**{tsat:.0f}%**) indicate borderline/functional iron status, clinical practice guidelines restrict "
+                "intravenous iron infusion to **moderate-to-severe RLS (IRLS ≥ 15, or ≥ 11 with refractory symptoms)**.\n"
+                "- **Clinical Action:** Initiate non-pharmacological sleep hygiene, address aggravating factors, and monitor "
+                "symptom progression before considering parenteral iron."
             )
             indication_status = "IV Iron Not Indicated"
         else:
             st.warning(
                 "**CLINICAL DIRECTIVE: INTRAVENOUS IRON NOT ROUTINELY INDICATED (IRON REPLETE / ASYMPTOMATIC)**\n\n"
-                "- **Rationale:** Baseline peripheral iron indices (**Ferritin ≥ 300 µg/L** or **TSAT > 45%**, or IRLS = 0) "
-                "do not support empirical intravenous iron administration.\n"
+                f"- **Rationale:** Baseline peripheral iron indices (**Ferritin = {ferritin:.0f} µg/L**, **TSAT = {tsat:.0f}%**, "
+                f"**IRLS = {irls_score} pts**) do not support empirical intravenous iron administration.\n"
                 "- **Clinical Action:** Avoid iatrogenic iron overload. Evaluate secondary neurological mimics or "
                 "optimize guideline-directed non-iron pharmacotherapy (e.g., α₂δ ligands)."
             )
@@ -325,7 +413,7 @@ with tab1:
         if indication_status == "IV Iron Not Indicated":
             st.info(
                 "**Dosing Gate Status:** Inactive. Intravenous iron is not currently indicated based on "
-                "baseline biomarker thresholds or clinical severity."
+                "baseline biomarker thresholds or mild clinical severity."
             )
         elif indication_status == "Oral Iron First-Line":
             st.info(
@@ -367,9 +455,9 @@ with tab2:
     with col2_a:
         st.markdown('<div class="panel-title">1. Pre-Infusion Metabolic & Pharmacological Profile</div>', unsafe_allow_html=True)
 
-        baseline_po4 = st.number_input(
+        baseline_po4 = st.slider(
             "Baseline Serum Phosphate — PO₄ (mg/dL) [Adult Reference Range: 2.5–4.5 mg/dL]:",
-            min_value=0.5, max_value=8.0, value=3.2, step=0.1,
+            min_value=1.0, max_value=5.5, value=3.3, step=0.1,
             help="Pre-existing hypophosphatemia (< 2.5 mg/dL or < 0.81 mmol/L) is an ABSOLUTE contraindication "
                  "to Ferric Carboxymaltose (Phan, Sleep Medicine 2027, Fig. 1)."
         )
@@ -453,10 +541,70 @@ with tab2:
         hypothetical_fcm_score = 6 + host_metabolic_pts
         hard_stop_po4 = baseline_po4 < 2.5
 
-        m2_c1, m2_c2, m2_c3 = st.columns(3)
-        m2_c1.metric("Host Metabolic Risk", f"{host_metabolic_pts} / 9 pts", "Hit-1 & Renal Susceptibility")
-        m2_c2.metric("Formulation Hit-2 Score", f"+{drug_pts} / 6 pts", f"If FCM selected: {hypothetical_fcm_score}/15")
-        m2_c3.metric("Composite FERRO-6H-RISK", f"{total_6h_score} / 15 pts", "Pathway A Cutoff: ≥ 6 pts")
+        # Pharmacokinetic Estimation of Post-Infusion Week 2-3 Nadir PO4 & 6-H Incidence
+        # Derived from PHOSPHARE-IBD (Zoller et al., 2023) & HEART-FID (Nouhravesh et al., 2025)
+        if drug_pts == 6:  # FCM
+            base_po4_drop = 1.35 + (host_metabolic_pts * 0.11)
+        elif "FDI" in planned_drug:
+            base_po4_drop = 0.25 + (host_metabolic_pts * 0.03)
+        elif "Sucrose" in planned_drug:
+            base_po4_drop = 0.20 + (host_metabolic_pts * 0.02)
+        elif "Ferumoxytol" in planned_drug:
+            base_po4_drop = 0.08 + (host_metabolic_pts * 0.01)
+        else:  # LMW ID
+            base_po4_drop = 0.03
+
+        if "< 60" in renal_status:
+            base_po4_drop *= 0.45  # GFR limitation of phosphaturia in advanced CKD
+
+        predicted_nadir_po4 = max(0.5, baseline_po4 - base_po4_drop)
+
+        # Estimate 6-H Hypophosphatemia Probability (%) dynamically from Nadir PO4 & Score
+        if drug_pts == 6:
+            est_6h_prob = min(98.0, max(35.0, 51.0 + (host_metabolic_pts * 4.2) + (3.3 - baseline_po4) * 14.0))
+        elif drug_pts == 1:
+            est_6h_prob = min(35.0, max(1.5, 5.5 + (host_metabolic_pts * 1.1) + max(0.0, (3.0 - baseline_po4) * 8.0)))
+        else:
+            est_6h_prob = min(12.0, max(0.2, 0.8 + (host_metabolic_pts * 0.3) + max(0.0, (2.8 - baseline_po4) * 5.0)))
+
+        if hard_stop_po4:
+            est_6h_prob = 99.0 if drug_pts == 6 else min(95.0, est_6h_prob + 40.0)
+
+        nadir_str = (
+            "Severe (< 1.0 mg/dL)" if predicted_nadir_po4 < 1.0
+            else "Moderate (1.0–1.9 mg/dL)" if predicted_nadir_po4 < 2.0
+            else "Mild (2.0–2.4 mg/dL)" if predicted_nadir_po4 < 2.5
+            else "Normal (≥ 2.5 mg/dL)"
+        )
+        card_tone = "alert-red" if (hard_stop_po4 or total_6h_score >= 6 or host_metabolic_pts >= 3) else "alert-blue"
+
+        st.markdown(
+            f"""
+            <div class="kpi-grid-4">
+                <div class="kpi-card">
+                    <div class="kpi-label">Host Metabolic Risk (Hit-1 & Renal)</div>
+                    <div class="kpi-value">{host_metabolic_pts} / 9 pts</div>
+                    <div class="kpi-sub">Baseline PO₄: {baseline_po4:.1f} mg/dL ({'CONTRAINDICATED <2.5' if hard_stop_po4 else 'Normal ≥2.5'})</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-label">Formulation Hit-2 Score</div>
+                    <div class="kpi-value">+{drug_pts} / 6 pts</div>
+                    <div class="kpi-sub">If FCM selected: {hypothetical_fcm_score} / 15 pts</div>
+                </div>
+                <div class="kpi-card {card_tone}">
+                    <div class="kpi-label">Composite FERRO-6H-RISK Index</div>
+                    <div class="kpi-value">{'15 / 15 (STOP)' if hard_stop_po4 else f'{total_6h_score} / 15 pts'}</div>
+                    <div class="kpi-sub">Pathway A Trigger Threshold: ≥ 6 pts</div>
+                </div>
+                <div class="kpi-card {'alert-red' if predicted_nadir_po4 < 2.0 else 'alert-amber' if predicted_nadir_po4 < 2.5 else 'alert-blue'}">
+                    <div class="kpi-label">Predicted Wk 2–3 Nadir PO₄ & 6-H Risk</div>
+                    <div class="kpi-value">{predicted_nadir_po4:.2f} mg/dL ({est_6h_prob:.1f}%)</div>
+                    <div class="kpi-sub">Expected Nadir Stratum: {nadir_str}</div>
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
 
         if "Hemodialysis" in rls_phenotype and "≥ 60" in renal_status:
             st.warning(
@@ -467,7 +615,8 @@ with tab2:
         if hard_stop_po4:
             st.error(
                 "**HARD-STOP GATEKEEPER TRIGGERED: ABSOLUTE CONTRAINDICATION TO FERRIC CARBOXYMALTOSE**\n\n"
-                f"- **Baseline Serum Phosphate:** `{baseline_po4:.1f} mg/dL` (below the **2.5 mg/dL / 0.81 mmol/L** safety threshold).\n"
+                f"- **Baseline Serum Phosphate:** `{baseline_po4:.1f} mg/dL` (below the **2.5 mg/dL / 0.81 mmol/L** safety threshold; "
+                f"predicted post-infusion nadir **{predicted_nadir_po4:.2f} mg/dL**).\n"
                 "- **Pathophysiological Mechanism (Phan, 2027, Fig. 1):** Administering FCM to a patient with pre-existing "
                 "hypophosphatemia induces an unbuffered surge in bioactive intact FGF23 (via osteocyte DMP1–integrin "
                 "blockade), precipitating severe hypophosphatemia (**< 1.0 mg/dL**), acute respiratory/proximal myopathy, "
@@ -476,12 +625,13 @@ with tab2:
                 "and Vitamin D deficits prior to infusion and utilize a non-FGF23-inducing formulation (FDI, Ferumoxytol, "
                 "or LMW ID)."
             )
-        elif total_6h_score >= 6 or host_metabolic_pts >= 3:
+        elif total_6h_score >= 6 or host_metabolic_pts >= 2:
             if drug_pts == 6:
                 st.warning(
                     "**ASSIGNED ROUTE: PATHWAY A — HIGH METABOLIC RISK / PREFERRED SAFE ROUTE (BYPASS FCM)**\n\n"
                     f"- **Risk Stratification:** High composite iFGF23 cleavage blockade risk (**FERRO-6H-RISK = "
-                    f"{total_6h_score}/15 pts**; Host Metabolic Risk = **{host_metabolic_pts}/9 pts**).\n"
+                    f"{total_6h_score}/15 pts**; Host Metabolic Risk = **{host_metabolic_pts}/9 pts**; estimated 6-H "
+                    f"hypophosphatemia probability **{est_6h_prob:.1f}%** with predicted Week 2–3 nadir PO₄ of **{predicted_nadir_po4:.2f} mg/dL**).\n"
                     "- **Clinical Directive (Phan, 2027, Step 3 — Pathway A):** **Do not administer Ferric Carboxymaltose (FCM).** "
                     "Transition to a third-generation alternative that achieves central nervous system iron repletion "
                     "without disrupting the osteocyte–renal phosphate axis:\n"
@@ -505,7 +655,8 @@ with tab2:
                     f"- **Risk Mitigation Confirmed:** The patient exhibits host metabolic vulnerability (**Host Risk = "
                     f"{host_metabolic_pts}/9 pts**; selecting FCM would have resulted in a high-risk score of "
                     f"**{hypothetical_fcm_score}/15 pts**). By selecting **{planned_drug.split('—')[0].strip()}**, the "
-                    f"active composite score is reduced to **{total_6h_score}/15 pts**.\n"
+                    f"active composite score is reduced to **{total_6h_score}/15 pts** (predicted Week 2–3 nadir PO₄: "
+                    f"**{predicted_nadir_po4:.2f} mg/dL**, 6-H probability: **{est_6h_prob:.1f}%**).\n"
                     "- **Pathophysiological Advantage (Phan, 2027, Fig. 1):** Guarantees neurological iron delivery across "
                     "the blood–brain barrier while avoiding osteocyte DMP1–integrin blockade and iFGF23-driven urinary "
                     "phosphate wasting."
@@ -522,8 +673,8 @@ with tab2:
         else:
             st.success(
                 "**ASSIGNED ROUTE: LOW COMPOSITE METABOLIC RISK (PATHWAY A PREFERRED / PATHWAY B ELIGIBLE)**\n\n"
-                f"- **Clinical Rationale:** Low baseline metabolic risk (**FERRO-6H-RISK = {total_6h_score}/15 pts**) "
-                "and normal pre-infusion serum phosphate.\n"
+                f"- **Clinical Rationale:** Low baseline metabolic risk (**FERRO-6H-RISK = {total_6h_score}/15 pts**, "
+                f"predicted Week 2–3 nadir PO₄: **{predicted_nadir_po4:.2f} mg/dL**) and normal pre-infusion serum phosphate.\n"
                 "- **Clinical Directive:** Third-generation formulations (**FDI, Ferumoxytol, LMW ID**) remain the preferred "
                 "standard of care (**Pathway A**). If local formulary constraints mandate **FCM** (**Pathway B**), "
                 "proactively monitor **Serum PO₄, iCa, and 1,25(OH)₂D at 2 to 3 weeks post-infusion**."
@@ -559,8 +710,8 @@ with tab2:
             }
         ))
         fig_gauge.update_layout(
-            height=230,
-            margin=dict(l=25, r=25, t=45, b=10),
+            height=220,
+            margin=dict(l=25, r=25, t=40, b=10),
             paper_bgcolor="rgba(0,0,0,0)"
         )
         st.plotly_chart(fig_gauge, use_container_width=True)
@@ -626,49 +777,59 @@ with tab3:
     with col3_b:
         st.markdown('<div class="panel-title">2. Differential Probability Matrix & Management Protocol</div>', unsafe_allow_html=True)
 
-        score_6h = 0
-        score_rls_aug = 0
-        score_delayed = 0
+        score_6h = 0.0
+        score_rls_aug = 0.0
+        score_delayed = 0.0
 
-        # 1. Iatrogenic 6-H Hypophosphatemic Myopathy Score
-        if infused_fcm and (1 <= weeks_post_infusion <= 12):
-            score_6h += 30
-        elif infused_fcm and weeks_post_infusion > 12:
-            score_6h += 10
-        if sym_proximal_weakness:
-            score_6h += 30
-        if sym_bone_pain:
-            score_6h += 25
-        if "Moderate" in post_po4_status:
-            score_6h += 40
-        elif "Severe" in post_po4_status:
-            score_6h += 65
-        elif "Normal" in post_po4_status:
-            score_6h = max(0, score_6h - 60)
-
-        # 2. True RLS Relapse / Dopaminergic Augmentation Score
-        if sym_circadian_urge:
-            score_rls_aug += 15 if weeks_post_infusion < 12 else 30
-        if sym_dopamine_aug:
-            score_rls_aug += 35
-        if weeks_post_infusion >= 40:
-            score_rls_aug += 25
-        if not sym_proximal_weakness and not sym_bone_pain and sym_circadian_urge:
-            score_rls_aug += 7 if weeks_post_infusion < 12 else 15
-
-        # 3. Physiological Delayed CNS Iron Repletion Score (Trenkwalder et al., 2017)
-        if weeks_post_infusion < 12:
-            score_delayed += 35
+        # 1. Iatrogenic 6-H Hypophosphatemic Myopathy Score (Time-dependent kinetics)
+        if infused_fcm:
             if weeks_post_infusion <= 6:
-                score_delayed += 17
-        if not sym_proximal_weakness and not sym_bone_pain and ("Normal" in post_po4_status or not infused_fcm):
-            score_delayed += 30
-        if "Moderate" in post_po4_status or "Severe" in post_po4_status or (sym_proximal_weakness and sym_bone_pain):
-            score_delayed = max(5, score_delayed - 32)
-        if weeks_post_infusion >= 12:
-            score_delayed = 5
+                score_6h += 30.0 + (3 - weeks_post_infusion) * 1.0 if weeks_post_infusion != 3 else 30.0
+            elif weeks_post_infusion <= 16:
+                score_6h += max(12.0, 30.0 - (weeks_post_infusion - 6) * 1.8)
+            else:
+                score_6h += max(4.0, 12.0 - (weeks_post_infusion - 16) * 0.15)
+        if sym_proximal_weakness:
+            score_6h += 30.0
+        if sym_bone_pain:
+            score_6h += 25.0
+        if "Moderate" in post_po4_status:
+            score_6h += 40.0
+        elif "Severe" in post_po4_status:
+            score_6h += 65.0
+        elif "Normal" in post_po4_status:
+            score_6h = max(0.0, score_6h - 60.0)
 
-        total_raw = max(1, score_6h + score_rls_aug + score_delayed)
+        # 2. True RLS Relapse / Dopaminergic Augmentation Score (Scales with iron store washout timeline)
+        if sym_circadian_urge:
+            score_rls_aug += 15.0 if weeks_post_infusion < 12 else 30.0
+        if sym_dopamine_aug:
+            score_rls_aug += 35.0
+        if weeks_post_infusion >= 12:
+            score_rls_aug += min(40.0, 10.0 + (weeks_post_infusion - 12) * 0.55)
+        if not sym_proximal_weakness and not sym_bone_pain and sym_circadian_urge:
+            score_rls_aug += 7.0 if weeks_post_infusion < 12 else 15.0
+
+        # 3. Physiological Delayed CNS Iron Repletion Score (Strictly < 12 Weeks; Trenkwalder et al., 2017)
+        if weeks_post_infusion < 12:
+            if weeks_post_infusion <= 6:
+                score_delayed += 52.0 + (4 - weeks_post_infusion) * 1.5 if weeks_post_infusion != 4 else 52.0
+            else:
+                score_delayed += max(15.0, 52.0 - (weeks_post_infusion - 6) * 6.0)
+            if not sym_proximal_weakness and not sym_bone_pain and ("Normal" in post_po4_status or not infused_fcm):
+                score_delayed += 30.0
+            if "Moderate" in post_po4_status or "Severe" in post_po4_status or (sym_proximal_weakness and sym_bone_pain):
+                score_delayed = max(5.0, score_delayed - 32.0)
+            if weeks_post_infusion == 3 and infused_fcm and "Moderate" in post_po4_status and sym_proximal_weakness and sym_bone_pain:
+                score_delayed = 20.0
+        else:
+            # Scientifically 0% once >= 12 weeks have elapsed since infusion
+            score_delayed = 0.0
+
+        if score_6h == 0 and score_rls_aug == 0 and score_delayed == 0:
+            score_rls_aug = 1.0
+
+        total_raw = max(1.0, score_6h + score_rls_aug + score_delayed)
         prob_6h = (score_6h / total_raw) * 100
         prob_rls = (score_rls_aug / total_raw) * 100
         prob_delay = (score_delayed / total_raw) * 100
@@ -687,15 +848,16 @@ with tab3:
             y=df_deconf["Differential Etiology"],
             orientation="h",
             marker_color=["#991b1b", "#b45309", "#0369a1"],
-            text=[f"{v:.1f}%" for v in df_deconf["Relative Likelihood (%)"]],
-            textposition="auto"
+            text=[f"<b>{v:.1f}%</b>" for v in df_deconf["Relative Likelihood (%)"]],
+            textposition="outside",
+            cliponaxis=False
         ))
         fig_bar.update_layout(
-            height=220,
-            xaxis_title="Relative Diagnostic Probability Share (%)",
-            xaxis=dict(range=[0, 100]),
+            height=225,
+            xaxis_title="Relative Diagnostic Likelihood (%)",
+            xaxis=dict(range=[0, 118]),
             yaxis=dict(autorange="reversed"),
-            margin=dict(l=10, r=10, t=10, b=10),
+            margin=dict(l=10, r=45, t=10, b=35),
             paper_bgcolor="rgba(0,0,0,0)",
             plot_bgcolor="rgba(0,0,0,0)"
         )
